@@ -1337,11 +1337,13 @@ void HandleUI(void)
 		// ElectronAsh.
 		strcpy(SelectedPath + strlen(SelectedPath) - 3, "CUE");
 		printf("Checking for presence of CUE file %s\n", SelectedPath);
+		/*
 		if (user_io_file_mount(SelectedPath, drive_num+1)) {
 			iso_mode = 1;
 			printf("CD ISO mode active!\n");
 		}
 		else iso_mode = 0;
+		*/
 
 		menustate = SelectedPath[0] ? MENU_NONE1 : MENU_8BIT_MAIN1;
 		break;
