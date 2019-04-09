@@ -783,10 +783,11 @@ void user_io_sd_set_config(void)
 }
 
 // read 8+32 bit sd card status word from FPGA
-uint16_t user_io_sd_get_status(uint32_t *lba)
+uint16_t user_io_sd_get_status(uint32_t *lba, uint16_t *req_type)
 {
 	uint32_t s;
 	uint16_t c;
+	uint16_t req = 0;
 
 	spi_uio_cmd_cont(UIO_GET_SDSTAT);
 	if (io_ver)
@@ -794,6 +795,7 @@ uint16_t user_io_sd_get_status(uint32_t *lba)
 		c = spi_w(0);
 		s = spi_w(0);
 		s = (s & 0xFFFF) | (((uint32_t)spi_w(0))<<16);
+		req = spi_w(0);
 	}
 	else
 	{
@@ -803,12 +805,16 @@ uint16_t user_io_sd_get_status(uint32_t *lba)
 		s = (s << 8) | spi_in();
 		s = (s << 8) | spi_in();
 		s = (s << 8) | spi_in();
+		req = spi_in();
 	}
 	DisableIO();
 
 	if (lba)
 		*lba = s;
 
+	if (req)
+		*req_type = req;
+	
 	return c;
 }
 
@@ -1700,8 +1706,10 @@ void user_io_poll()
 	else if (core_type == CORE_TYPE_8BIT || core_type == CORE_TYPE_ARCHIE)
 	{
 		static uint8_t buffer[4][512];
+		static uint8_t buffer2048[4][2048];
 		uint32_t lba;
-		uint16_t c = user_io_sd_get_status(&lba);
+		uint16_t req_type = 0;
+		uint16_t c = user_io_sd_get_status(&lba, &req_type);
 		//if(c&3) printf("user_io_sd_get_status: cmd=%02x, lba=%08x\n", c, lba);
 
 		// valid sd commands start with "5x" to avoid problems with
@@ -1790,25 +1798,47 @@ void user_io_poll()
 				//printf("SD RD %d on %d, WIDE=%d\n", lba, disk, fio_size);
 
 				int done = 0;
-
+				
 				if (buffer_lba[disk] != lba)
 				{
 					if (sd_image[disk].size)
 					{
 						diskled_on();
-						if (FileSeekLBA(&sd_image[disk], lba))
-						{
-							if (FileReadSec(&sd_image[disk], buffer[disk]))
-							{
-								done = 1;
-							}
+						switch (req_type) {
+							case 1234: {
+								printf("core requesting CD TOC info\n");
+							}; break;
+							
+							case 2048: {
+								printf("core requesting a 2048-byte CD sector, from MSF: 0x%08X\n", lba);
+								if ( FileSeek(&sd_image[disk], ((lba-225)*2352)+16, SEEK_SET) )
+								{
+									if ( FileReadSec2048(&sd_image[disk], buffer2048[disk]) ) done = 1;
+									//FileReadAdv(&sd_image[disk], buffer2048[disk], 2048);
+								}
+								//Even after error we have to provide the block to the core
+								//Give an empty block.
+								if (!done) memset(buffer2048[disk], 0, sizeof(buffer2048[disk]));
+								buffer_lba[disk] = lba;
+							}; break;
+							
+							case 2352: {
+								printf("core requesting a 2352-byte CD sector, from CDLBA: 0x%08X\n", lba);
+							}; break;
+							
+							default: {
+								printf("core requesting a raw 512-byte SD / VHD sector, from LBA: 0x%08X\n", lba);
+								if (FileSeekLBA(&sd_image[disk], lba))
+								{
+									if ( FileReadSec(&sd_image[disk], buffer[disk]) ) done = 1;
+								}
+								//Even after error we have to provide the block to the core
+								//Give an empty block.
+								if (!done) memset(buffer[disk], 0, sizeof(buffer[disk]));
+								buffer_lba[disk] = lba;
+							}; break;
 						}
 					}
-
-					//Even after error we have to provide the block to the core
-					//Give an empty block.
-					if (!done) memset(buffer[disk], 0, sizeof(buffer[disk]));
-					buffer_lba[disk] = lba;
 				}
 
 				if(buffer_lba[disk] == lba)
@@ -1817,7 +1847,8 @@ void user_io_poll()
 
 					// data is now stored in buffer. send it to fpga
 					spi_uio_cmd_cont(UIO_SECTOR_RD);
-					spi_block_write(buffer[disk], fio_size);
+					if (req_type==2048) spi_block_write2048(buffer2048[disk], fio_size);
+					else spi_block_write(buffer[disk], fio_size);
 					DisableIO();
 				}
 
@@ -1827,15 +1858,24 @@ void user_io_poll()
 				if (sd_image[disk].size)
 				{
 					diskled_on();
-					if (FileSeekLBA(&sd_image[disk], lba + 1))
+					if (req_type==2048)
 					{
-						if (FileReadSec(&sd_image[disk], buffer[disk]))
-						{
-							done = 1;
+						if ( FileSeek(&sd_image[disk], ((lba-225)*2352)+16, SEEK_SET) ) {
+							if ( FileReadSec2048(&sd_image[disk], buffer2048[disk]) ) {
+								done = 1;
+							}
+						}
+					}
+					else
+					{
+						if ( FileSeekLBA(&sd_image[disk], lba + 1) ) {
+							if (FileReadSec(&sd_image[disk], buffer[disk])) {
+								done = 1;
+							}
 						}
 					}
 				}
-				if(done) buffer_lba[disk] = lba + 1;
+				if (done) buffer_lba[disk] = lba + 1;
 
 				if (sd_image[disk].type == 2)
 				{

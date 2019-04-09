@@ -457,6 +457,11 @@ int FileReadSec(fileTYPE *file, void *pBuffer)
 	return FileReadAdv(file, pBuffer, 512);
 }
 
+int FileReadSec2048(fileTYPE *file, void *pBuffer)
+{
+	return FileReadAdv(file, pBuffer, 2048);
+}
+
 // Write with offset advancing
 int FileWriteAdv(fileTYPE *file, void *pBuffer, int length)
 {
