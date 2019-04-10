@@ -1799,8 +1799,8 @@ void user_io_poll()
 
 				int done = 0;
 				
-				if (buffer_lba[disk] != lba)
-				{
+				//if (buffer_lba[disk] != lba)
+				//{
 					if (sd_image[disk].size)
 					{
 						diskled_on();
@@ -1839,7 +1839,7 @@ void user_io_poll()
 							}; break;
 						}
 					}
-				}
+				//}
 
 				if(buffer_lba[disk] == lba)
 				{
@@ -1854,6 +1854,7 @@ void user_io_poll()
 
 				// just load the next sector now, so it may be prefetched
 				// for the next request already
+				/*
 				done = 0;
 				if (sd_image[disk].size)
 				{
@@ -1881,6 +1882,7 @@ void user_io_poll()
 				{
 					buffer_lba[disk] = -1;
 				}
+				*/
 			}
 		}
 
