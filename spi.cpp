@@ -308,11 +308,6 @@ void spi_block_write(const uint8_t *addr, int wide)
 	spi_write(addr, 512, wide);
 }
 
-void spi_block_write2048(const uint8_t *addr, int wide)
-{
-	spi_write(addr, 2048, wide);
-}
-
 void spi_block_write_16be(const uint16_t *addr)
 {
 	uint16_t len = 256;

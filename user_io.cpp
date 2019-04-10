@@ -1531,6 +1531,56 @@ static int adjust_video_mode(uint32_t vtime);
 static uint32_t show_video_info(int force);
 static uint32_t res_timer = 0;
 
+/*
+void cd_generate_toc(uint8_t type)
+{
+	switch (type)
+	{
+		case 0xD0: {
+			printf("Core requesting CD TOC0 (First Track / Last Track)\n");
+			buffer[disk][0] = 0x01;	// Rondo - First track (BCD).
+			buffer[disk][1] = 0x22;	// Rondo - Last track (BCD).
+			buffer[disk][2] = 0x00;	// Padding.
+			buffer[disk][3] = 0x00;	// Padding.
+		}; break;
+
+		case 0xD1: {
+			printf("Core requesting CD TOC1 (Total disk size in MSF)\n");
+			buffer[disk][0] = 0x49;	// Rondo - Minutes = 0x49 (73).
+			buffer[disk][1] = 0x09;	// Rondo - Seconds = 0x09 (9).
+			buffer[disk][2] = 0x12;	// Rondo - Frames = 0x12 (18).
+			buffer[disk][3] = 0x00;	// Padding.
+		}; break;
+
+		case 0xD2: {
+			uint8_t track = req_type&0xFF;	// BCD!
+			printf("Core requesting CD TOC2 (Track info). Track==0x%02X\n", track);
+			switch ( track ) {
+				case 0x01: {	// BCD!
+					buffer[disk][0] = 0x00;	// M
+					buffer[disk][1] = 0x02;	// S
+					buffer[disk][2] = 0x00;	// F
+					buffer[disk][3] = 0x00;	// Track type. (Rondo, track 1, Audio)
+				}; break;
+				case 0x02: {	// BCD!
+					buffer[disk][0] = 0x00;	// M
+					buffer[disk][1] = 0x53;	// S
+					buffer[disk][2] = 0x65;	// F
+					buffer[disk][3] = 0x04;	// Track type. (Rondo, track 2, DATA)
+				}; break;
+				case 0x22: {	// BCD!
+					buffer[disk][0] = 0x46;	// M
+					buffer[disk][1] = 0x58;	// S
+					buffer[disk][2] = 0x62;	// F
+					buffer[disk][3] = 0x04;	// Track type. (Rondo, track 22, DATA)
+				}; break;
+			}
+		}; break;
+	}
+}
+*/
+
+
 void user_io_poll()
 {
 	if ((core_type != CORE_TYPE_MINIMIG2) &&
@@ -1705,8 +1755,7 @@ void user_io_poll()
 	}
 	else if (core_type == CORE_TYPE_8BIT || core_type == CORE_TYPE_ARCHIE)
 	{
-		static uint8_t buffer[4][512];
-		static uint8_t buffer2048[4][2048];
+		static uint8_t buffer[4][2352];
 		uint32_t lba;
 		uint16_t req_type = 0;
 		uint16_t c = user_io_sd_get_status(&lba, &req_type);
@@ -1804,53 +1853,99 @@ void user_io_poll()
 					if (sd_image[disk].size)
 					{
 						diskled_on();
-						switch (req_type) {
-							case 1234: {
-								printf("core requesting CD TOC info\n");
+						printf("req_type: 0x%04X  ", req_type);
+						switch ( (req_type&0xFF00)>>8 )
+						{
+							/*
+							case 0xD0,0xD1,0xD2: {
+								cd_generate_toc( req_type&0xFF00)>>8 );
 							}; break;
-							
-							case 2048: {
-								printf("core requesting a 2048-byte CD sector, from MSF: 0x%08X\n", lba);
+							*/
+						
+							case 0xD0: {
+								printf("Core requesting CD TOC0 (First Track / Last Track)\n");
+								buffer[disk][0] = 0x01;	// Rondo - First track (BCD).
+								buffer[disk][1] = 0x22;	// Rondo - Last track (BCD).
+								buffer[disk][2] = 0x00;	// Padding.
+								buffer[disk][3] = 0x00;	// Padding.
+								done = 1;
+							}; break;
+
+							case 0xD1: {
+								printf("Core requesting CD TOC1 (Total Disk Size in MSF)\n");
+								buffer[disk][0] = 0x49;	// Rondo - Minutes = 0x49 (73).
+								buffer[disk][1] = 0x09;	// Rondo - Seconds = 0x09 (9).
+								buffer[disk][2] = 0x12;	// Rondo - Frames = 0x12 (18).
+								buffer[disk][3] = 0x00;	// Padding.
+								done = 1;
+							}; break;
+
+							case 0xD2: {
+								uint8_t track = req_type&0xFF;	// BCD!
+								printf("Core requesting CD TOC2 (Track Info). Track==0x%02X (BCD)\n", track);
+								switch ( track ) {
+									case 0x01: {	// BCD!
+										buffer[disk][0] = 0x00;	// M
+										buffer[disk][1] = 0x02;	// S
+										buffer[disk][2] = 0x00;	// F
+										buffer[disk][3] = 0x00;	// Track type. (Rondo, track 1, Audio)
+									}; break;
+									case 0x02: {	// BCD!
+										buffer[disk][0] = 0x00;	// M
+										buffer[disk][1] = 0x53;	// S
+										buffer[disk][2] = 0x65;	// F
+										buffer[disk][3] = 0x04;	// Track type. (Rondo, track 2, DATA)
+									}; break;
+									case 0x22: {	// BCD!
+										buffer[disk][0] = 0x46;	// M
+										buffer[disk][1] = 0x58;	// S
+										buffer[disk][2] = 0x62;	// F
+										buffer[disk][3] = 0x04;	// Track type. (Rondo, track 22, DATA)
+									}; break;
+								}
+								done = 1;
+							}; break;
+
+							case 0x48: {
+								printf("Core requesting a 2048-byte CD sector, from MSF: 0x%08X\n", lba);
 								if ( FileSeek(&sd_image[disk], ((lba-225)*2352)+16, SEEK_SET) )
 								{
-									if ( FileReadSec2048(&sd_image[disk], buffer2048[disk]) ) done = 1;
-									//FileReadAdv(&sd_image[disk], buffer2048[disk], 2048);
+									if ( FileReadAdv(&sd_image[disk], buffer[disk], 2048) ) done = 1;
 								}
-								//Even after error we have to provide the block to the core
-								//Give an empty block.
-								if (!done) memset(buffer2048[disk], 0, sizeof(buffer2048[disk]));
-								buffer_lba[disk] = lba;
 							}; break;
 							
-							case 2352: {
-								printf("core requesting a 2352-byte CD sector, from CDLBA: 0x%08X\n", lba);
+							case 0x52: {
+								printf("Core requesting a 2352-byte CD sector, from CDLBA: 0x%08X\n", lba);
 							}; break;
 							
 							default: {
-								printf("core requesting a raw 512-byte SD / VHD sector, from LBA: 0x%08X\n", lba);
+								printf("Core requesting a 512-byte SD / VHD sector, from LBA: 0x%08X\n", lba);
 								if (FileSeekLBA(&sd_image[disk], lba))
 								{
 									if ( FileReadSec(&sd_image[disk], buffer[disk]) ) done = 1;
 								}
-								//Even after error we have to provide the block to the core
-								//Give an empty block.
-								if (!done) memset(buffer[disk], 0, sizeof(buffer[disk]));
-								buffer_lba[disk] = lba;
 							}; break;
 						}
 					}
 				//}
 
-				if(buffer_lba[disk] == lba)
-				{
+				//Even after error we have to provide the block to the core
+				//Give an empty block.
+				if (!done) memset(buffer[disk], 0, sizeof(buffer[disk]));
+				buffer_lba[disk] = lba;
+				
+				//if(buffer_lba[disk] == lba)
+				//{
 					//hexdump(buffer, 32, 0);
 
 					// data is now stored in buffer. send it to fpga
 					spi_uio_cmd_cont(UIO_SECTOR_RD);
-					if (req_type==2048) spi_block_write2048(buffer2048[disk], fio_size);
-					else spi_block_write(buffer[disk], fio_size);
+					if ( (req_type&0xF000)==0xD000 ) spi_write(buffer[disk], 4, fio_size);			// TOC. (4 bytes, including padding).
+					else if ( (req_type&0xFF00)==0x4800 ) spi_write(buffer[disk], 2048, fio_size);	// 2048-byte CD sector.
+					else if ( (req_type&0xFF00)==0x5200 ) spi_write(buffer[disk], 2352, fio_size);	// 2352-byte CD sector.
+					else spi_write(buffer[disk], 512, fio_size);									// Standard 512-byte SD / VHD sector.
 					DisableIO();
-				}
+				//}
 
 				// just load the next sector now, so it may be prefetched
 				// for the next request already
