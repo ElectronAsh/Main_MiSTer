@@ -1531,55 +1531,52 @@ static int adjust_video_mode(uint32_t vtime);
 static uint32_t show_video_info(int force);
 static uint32_t res_timer = 0;
 
-/*
-void cd_generate_toc(uint8_t type)
+
+void cd_generate_toc(uint16_t req_type, uint8_t *buffer)
 {
-	switch (type)
-	{
+	switch ( (req_type&0xFF00)>>8 ) {
 		case 0xD0: {
 			printf("Core requesting CD TOC0 (First Track / Last Track)\n");
-			buffer[disk][0] = 0x01;	// Rondo - First track (BCD).
-			buffer[disk][1] = 0x22;	// Rondo - Last track (BCD).
-			buffer[disk][2] = 0x00;	// Padding.
-			buffer[disk][3] = 0x00;	// Padding.
+			buffer[0] = 0x01;	// Rondo - First track (BCD).
+			buffer[1] = 0x22;	// Rondo - Last track (BCD).
+			buffer[2] = 0x00;	// Padding.
+			buffer[3] = 0x00;	// Padding.
 		}; break;
 
 		case 0xD1: {
-			printf("Core requesting CD TOC1 (Total disk size in MSF)\n");
-			buffer[disk][0] = 0x49;	// Rondo - Minutes = 0x49 (73).
-			buffer[disk][1] = 0x09;	// Rondo - Seconds = 0x09 (9).
-			buffer[disk][2] = 0x12;	// Rondo - Frames = 0x12 (18).
-			buffer[disk][3] = 0x00;	// Padding.
+			printf("Core requesting CD TOC1 (Total Disk Size in MSF)\n");
+			buffer[0] = 0x49;	// Rondo - Minutes = 0x49 (73).
+			buffer[1] = 0x09;	// Rondo - Seconds = 0x09 (9).
+			buffer[2] = 0x12;	// Rondo - Frames = 0x12 (18).
+			buffer[3] = 0x00;	// Padding.
 		}; break;
 
 		case 0xD2: {
 			uint8_t track = req_type&0xFF;	// BCD!
-			printf("Core requesting CD TOC2 (Track info). Track==0x%02X\n", track);
+			printf("Core requesting CD TOC2 (Track Info). Track==0x%02X (BCD)\n", track);
 			switch ( track ) {
 				case 0x01: {	// BCD!
-					buffer[disk][0] = 0x00;	// M
-					buffer[disk][1] = 0x02;	// S
-					buffer[disk][2] = 0x00;	// F
-					buffer[disk][3] = 0x00;	// Track type. (Rondo, track 1, Audio)
+					buffer[0] = 0x00;	// M
+					buffer[1] = 0x02;	// S
+					buffer[2] = 0x00;	// F
+					buffer[3] = 0x00;	// Track type. (Rondo, track 1, Audio)
 				}; break;
 				case 0x02: {	// BCD!
-					buffer[disk][0] = 0x00;	// M
-					buffer[disk][1] = 0x53;	// S
-					buffer[disk][2] = 0x65;	// F
-					buffer[disk][3] = 0x04;	// Track type. (Rondo, track 2, DATA)
+					buffer[0] = 0x00;	// M
+					buffer[1] = 0x53;	// S
+					buffer[2] = 0x65;	// F
+					buffer[3] = 0x04;	// Track type. (Rondo, track 2, DATA)
 				}; break;
 				case 0x22: {	// BCD!
-					buffer[disk][0] = 0x46;	// M
-					buffer[disk][1] = 0x58;	// S
-					buffer[disk][2] = 0x62;	// F
-					buffer[disk][3] = 0x04;	// Track type. (Rondo, track 22, DATA)
+					buffer[0] = 0x46;	// M
+					buffer[1] = 0x58;	// S
+					buffer[2] = 0x62;	// F
+					buffer[3] = 0x04;	// Track type. (Rondo, track 22, DATA)
 				}; break;
 			}
 		}; break;
 	}
 }
-*/
-
 
 void user_io_poll()
 {
@@ -1856,58 +1853,14 @@ void user_io_poll()
 						printf("req_type: 0x%04X  ", req_type);
 						switch ( (req_type&0xFF00)>>8 )
 						{
-							/*
-							case 0xD0,0xD1,0xD2: {
-								cd_generate_toc( req_type&0xFF00)>>8 );
-							}; break;
-							*/
-						
-							case 0xD0: {
-								printf("Core requesting CD TOC0 (First Track / Last Track)\n");
-								buffer[disk][0] = 0x01;	// Rondo - First track (BCD).
-								buffer[disk][1] = 0x22;	// Rondo - Last track (BCD).
-								buffer[disk][2] = 0x00;	// Padding.
-								buffer[disk][3] = 0x00;	// Padding.
-								done = 1;
-							}; break;
-
-							case 0xD1: {
-								printf("Core requesting CD TOC1 (Total Disk Size in MSF)\n");
-								buffer[disk][0] = 0x49;	// Rondo - Minutes = 0x49 (73).
-								buffer[disk][1] = 0x09;	// Rondo - Seconds = 0x09 (9).
-								buffer[disk][2] = 0x12;	// Rondo - Frames = 0x12 (18).
-								buffer[disk][3] = 0x00;	// Padding.
-								done = 1;
-							}; break;
-
-							case 0xD2: {
-								uint8_t track = req_type&0xFF;	// BCD!
-								printf("Core requesting CD TOC2 (Track Info). Track==0x%02X (BCD)\n", track);
-								switch ( track ) {
-									case 0x01: {	// BCD!
-										buffer[disk][0] = 0x00;	// M
-										buffer[disk][1] = 0x02;	// S
-										buffer[disk][2] = 0x00;	// F
-										buffer[disk][3] = 0x00;	// Track type. (Rondo, track 1, Audio)
-									}; break;
-									case 0x02: {	// BCD!
-										buffer[disk][0] = 0x00;	// M
-										buffer[disk][1] = 0x53;	// S
-										buffer[disk][2] = 0x65;	// F
-										buffer[disk][3] = 0x04;	// Track type. (Rondo, track 2, DATA)
-									}; break;
-									case 0x22: {	// BCD!
-										buffer[disk][0] = 0x46;	// M
-										buffer[disk][1] = 0x58;	// S
-										buffer[disk][2] = 0x62;	// F
-										buffer[disk][3] = 0x04;	// Track type. (Rondo, track 22, DATA)
-									}; break;
-								}
+							case 0xD0:case 0xD1:case 0xD2: {
+								//printf("Generating TOC: 0x%02X\n", (req_type&0xFF00)>>8);
+								cd_generate_toc(req_type, buffer[disk]);
 								done = 1;
 							}; break;
 
 							case 0x48: {
-								printf("Core requesting a 2048-byte CD sector, from MSF: 0x%08X\n", lba);
+								printf("Core requesting a 2048-byte CD sector, from LBA: 0x%08X\n", lba);
 								if ( FileSeek(&sd_image[disk], ((lba-225)*2352)+16, SEEK_SET) )
 								{
 									if ( FileReadAdv(&sd_image[disk], buffer[disk], 2048) ) done = 1;
@@ -1915,7 +1868,11 @@ void user_io_poll()
 							}; break;
 							
 							case 0x52: {
-								printf("Core requesting a 2352-byte CD sector, from CDLBA: 0x%08X\n", lba);
+								printf("Core requesting a raw 2352-byte CD sector, from LBA: 0x%08X\n", lba);
+								if ( FileSeek(&sd_image[disk], lba*2352, SEEK_SET) )
+								{
+									if ( FileReadAdv(&sd_image[disk], buffer[disk], 2352) ) done = 1;
+								}
 							}; break;
 							
 							default: {
