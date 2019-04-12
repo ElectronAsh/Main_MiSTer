@@ -1539,6 +1539,8 @@ void cd_generate_toc(uint16_t req_type, uint8_t *buffer)
 			printf("Core requesting CD TOC0 (First Track / Last Track)\n");
 			buffer[0] = 0x01;	// Rondo - First track (BCD).
 			buffer[1] = 0x22;	// Rondo - Last track (BCD).
+			//buffer[0] = 0x01;	// URC - First track (BCD).
+			//buffer[1] = 0x02;	// URC - Last track (BCD).
 			buffer[2] = 0x00;	// Padding.
 			buffer[3] = 0x00;	// Padding.
 		}; break;
@@ -1548,6 +1550,9 @@ void cd_generate_toc(uint16_t req_type, uint8_t *buffer)
 			buffer[0] = 0x49;	// Rondo - Minutes = 0x49 (73).
 			buffer[1] = 0x09;	// Rondo - Seconds = 0x09 (9).
 			buffer[2] = 0x12;	// Rondo - Frames = 0x12 (18).
+			//buffer[0] = 0x30;	// URC - Minutes = 0x49 (73).
+			//buffer[1] = 0x00;	// URC - Seconds = 0x09 (9).
+			//buffer[2] = 0x00;	// URC - Frames = 0x12 (18).
 			buffer[3] = 0x00;	// Padding.
 		}; break;
 
@@ -1560,12 +1565,20 @@ void cd_generate_toc(uint16_t req_type, uint8_t *buffer)
 					buffer[1] = 0x02;	// S
 					buffer[2] = 0x00;	// F
 					buffer[3] = 0x00;	// Track type. (Rondo, track 1, Audio)
+					//buffer[0] = 0x00;	// M
+					//buffer[1] = 0x00;	// S
+					//buffer[2] = 0x00;	// F
+					//buffer[3] = 0x00;	// Track type. (Rondo, track 1, Audio)
 				}; break;
 				case 0x02: {	// BCD!
 					buffer[0] = 0x00;	// M
 					buffer[1] = 0x53;	// S
 					buffer[2] = 0x65;	// F
 					buffer[3] = 0x04;	// Track type. (Rondo, track 2, DATA)
+					//buffer[0] = 0x00;	// M
+					//buffer[1] = 0x02;	// S
+					//buffer[2] = 0x00;	// F
+					//buffer[3] = 0x04;	// Track type. (Rondo, track 2, DATA)
 				}; break;
 				case 0x22: {	// BCD!
 					buffer[0] = 0x46;	// M
@@ -1845,6 +1858,8 @@ void user_io_poll()
 
 				int done = 0;
 				
+				uint32_t offset = 0;
+				
 				//if (buffer_lba[disk] != lba)
 				//{
 					if (sd_image[disk].size)
@@ -1860,11 +1875,13 @@ void user_io_poll()
 							}; break;
 
 							case 0x48: {
-								printf("Core requesting a 2048-byte CD sector, from LBA: 0x%08X\n", lba);
-								if ( FileSeek(&sd_image[disk], ((lba-225)*2352)+16, SEEK_SET) )
+								offset = ((lba-225)*2352)+16;	// Rondo etc.
+								//offset = (lba*2048);			// Homebrew, where the ISO has 2048-byte sectors already.
+								if ( FileSeek(&sd_image[disk], offset, SEEK_SET) )
 								{
 									if ( FileReadAdv(&sd_image[disk], buffer[disk], 2048) ) done = 1;
 								}
+								printf("Core requesting a 2048-byte CD sector, from LBA: 0x%08X  Offset: 0x%08X \n", lba, offset);
 							}; break;
 							
 							case 0x52: {
