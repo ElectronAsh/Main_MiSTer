@@ -1536,17 +1536,16 @@ void cd_generate_toc(uint16_t req_type, uint8_t *buffer)
 {
 	switch ( (req_type&0xFF00)>>8 ) {
 		case 0xD0: {
-			printf("Core requesting CD TOC0 (First Track / Last Track)\n");
 			buffer[0] = 0x01;	// Rondo - First track (BCD).
 			buffer[1] = 0x22;	// Rondo - Last track (BCD).
 			//buffer[0] = 0x01;	// URC - First track (BCD).
 			//buffer[1] = 0x02;	// URC - Last track (BCD).
 			buffer[2] = 0x00;	// Padding.
 			buffer[3] = 0x00;	// Padding.
+			printf("Core requesting CD TOC0. First Track:%02X. Last Track:%02X (BCD)\n", buffer[0], buffer[1]);
 		}; break;
 
 		case 0xD1: {
-			printf("Core requesting CD TOC1 (Total Disk Size in MSF)\n");
 			buffer[0] = 0x49;	// Rondo - Minutes = 0x49 (73).
 			buffer[1] = 0x09;	// Rondo - Seconds = 0x09 (9).
 			buffer[2] = 0x12;	// Rondo - Frames = 0x12 (18).
@@ -1554,11 +1553,11 @@ void cd_generate_toc(uint16_t req_type, uint8_t *buffer)
 			//buffer[1] = 0x00;	// URC - Seconds = 0x09 (9).
 			//buffer[2] = 0x00;	// URC - Frames = 0x12 (18).
 			buffer[3] = 0x00;	// Padding.
+			printf("Core requesting CD TOC1. Total Disk Size:M:%02X S:%02X F:%02X (BCD)\n", buffer[0], buffer[1], buffer[2]);
 		}; break;
 
 		case 0xD2: {
 			uint8_t track = req_type&0xFF;	// BCD!
-			printf("Core requesting CD TOC2 (Track Info). Track==0x%02X (BCD)\n", track);
 			switch ( track ) {
 				case 0x01: {	// BCD!
 					buffer[0] = 0x00;	// M
@@ -1587,6 +1586,9 @@ void cd_generate_toc(uint16_t req_type, uint8_t *buffer)
 					buffer[3] = 0x04;	// Track type. (Rondo, track 22, DATA)
 				}; break;
 			}
+			printf("Core requesting CD TOC2. Track:%02X. M:%02X S:%02X F:%02X (BCD). Type:", track, buffer[0], buffer[1], buffer[2]);
+			if (buffer[3]==0x00) printf("Audio\n");
+			else printf("Data\n");
 		}; break;
 	}
 }
