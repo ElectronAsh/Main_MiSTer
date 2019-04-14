@@ -58,11 +58,12 @@ int FileSeekLBA(fileTYPE *file, uint32_t offset);
 
 int FileReadAdv(fileTYPE *file, void *pBuffer, int length);
 int FileReadSec(fileTYPE *file, void *pBuffer);
-int FileReadSec2048(fileTYPE *file, void *pBuffer);
 int FileWriteAdv(fileTYPE *file, void *pBuffer, int length);
 int FileWriteSec(fileTYPE *file, void *pBuffer);
 
 int FileCanWrite(const char *name);
+
+int FileReadLine(fileTYPE *file, char *pBuffer, int length);
 
 #define SAVE_DIR "saves"
 void FileGenerateSavePath(const char *name, char* out_name);

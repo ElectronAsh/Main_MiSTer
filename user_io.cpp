@@ -37,6 +37,79 @@ unsigned long vol_set_timeout = 0;
 fileTYPE sd_image[4] = {};
 static uint64_t buffer_lba[4] = { ULLONG_MAX,ULLONG_MAX,ULLONG_MAX,ULLONG_MAX };
 
+static inline uint32_t msf_to_lba(uint8_t m, uint8_t s, uint8_t f)
+{
+	return (m*60*75) + (s*75) + f;
+}
+
+/*
+static inline void lba_to_msf(uint32_t lba, uint8_t *min, uint8_t *sec, uint8_t *fra)
+{
+	uint8_t m, s, f;
+
+	m = lba / (60 * 75);
+	lba -= m * (60 * 75);
+	s = lba / 75;
+	f = lba % 75;
+
+	min = (uint8_t)m;
+	sec = (uint8_t)s;
+	fra = (uint8_t)f;
+}
+*/
+
+uint32_t dec_2_bcd(uint32_t a)
+{
+	uint32_t result = 0;
+	int shift = 0;
+
+	while (a != 0)
+	{
+		result |= (a % 10) << shift;
+		a /= 10;
+		shift += 4;
+	}
+	return result;
+}
+
+
+uint32_t bcd_2_dec(uint32_t a)
+{
+	uint32_t result = 0;
+	uint32_t scale = 1;
+
+	while (a != 0)
+	{
+		result += (a & 0x0f) * scale;
+		a >>= 4;
+		scale *= 10;
+	}
+	return result;
+}
+
+typedef struct
+{
+	bool track_active;
+	bool pregap_present;
+	uint8_t pre_m;		// Actual "PREGAP".
+	uint8_t pre_s;
+	uint8_t pre_f;
+	bool ind0_present;
+	uint8_t ind0_m;		// "Pregap" index?
+	uint8_t ind0_s;
+	uint8_t ind0_f;
+	uint8_t ind1_m;		// "Track Start" index.
+	uint8_t ind1_s;
+	uint8_t ind1_f;
+	uint8_t type;		// 0==AUDIO. 4==DATA.
+	int bytes_per_sec;
+} cd_track_t;
+
+cd_track_t cd_trackinfo[100];
+
+uint8_t cd_first_track;
+uint8_t cd_last_track;
+
 // mouse and keyboard emulation state
 static int emu_mode = EMU_NONE;
 
@@ -1531,67 +1604,227 @@ static int adjust_video_mode(uint32_t vtime);
 static uint32_t show_video_info(int force);
 static uint32_t res_timer = 0;
 
+int cue_pt = 0;
+char cue_getch()
+{
+	static uint8_t buf[512];
+	if (!(cue_pt & 0x1ff)) FileReadSec(&sd_image[1], buf);
+	if (cue_pt >= sd_image[1].size) return 0;
+	return buf[(cue_pt++) & 0x1ff];
+}
+
+char cue_readline(char *buffer)
+{
+	char my_char = 0;
+	bool ret = 0;
+	int char_count = 0;
+	
+	for (int i=0; i<1024; i++) {
+		ret = ( my_char = cue_getch() );
+		if (my_char!=0x20) {	// Ditch the spaces.
+			buffer[char_count] = my_char;
+			if (ret==0 || my_char==0x0A) {
+				buffer[char_count+1] = 0x00;	// Null terminator.
+				break;
+			}
+			else char_count++;
+		}
+	}
+	return ret;
+}
+
+void parse_cue_file(void)
+{
+	 int i_num, i_min, i_sec, i_frame, bytes_per_sec = 0;
+	
+	// Clear the trackinfo before starting.
+	for (int i=0;i<100;i++)
+	{
+		cd_trackinfo[i].track_active = 0;
+		cd_trackinfo[i].pregap_present = 0;
+		cd_trackinfo[i].pre_m = 0;
+		cd_trackinfo[i].pre_s = 0;
+		cd_trackinfo[i].pre_f = 0;
+		cd_trackinfo[i].ind0_present = 0;
+		cd_trackinfo[i].ind0_m = 0;
+		cd_trackinfo[i].ind0_s = 0;
+		cd_trackinfo[i].ind0_f = 0;
+		cd_trackinfo[i].ind1_m = 0;
+		cd_trackinfo[i].ind1_s = 0;
+		cd_trackinfo[i].ind1_f = 0;
+		cd_trackinfo[i].type = 0;
+		cd_trackinfo[i].bytes_per_sec = 0;
+	}
+	
+	size_t i_tracks = 0;
+	char str[1024];
+	char type[5];
+		
+	cue_pt = 0;	// Set cue file index to zero.
+	
+	int track_num = 0;
+	bool first_track_done = 0;
+  
+// Note: strncmp==0 means a MATCH! Because reasons.
+  
+    while( i_tracks < 99 )
+    {	
+		if ( !cue_readline(str) ) break;	// Read in a whole line from the CUE file (until the end of the file).
+		
+		if ( strncmp(str, "TRACK", 5)==0 ) {	// Is this a track?
+			sscanf( str, "%*5s%2u%5s%*1s%4u", &track_num, type, &bytes_per_sec);
+			if (!first_track_done) {
+				first_track_done = 1;
+				cd_first_track = track_num;
+			}
+		}
+
+		if ( strncmp(str, "PREGAP", 6)==0 )
+		{
+			sscanf( str, "%*6s%2u:%2u:%2u", &i_min, &i_sec, &i_frame );
+			cd_trackinfo[track_num].pregap_present = 1;
+			cd_trackinfo[track_num].pre_m = i_min;
+			cd_trackinfo[track_num].pre_s = i_sec;
+			cd_trackinfo[track_num].pre_f = i_frame;
+		}
+        
+		if ( strncmp(str, "INDEX", 5)==0 )		// Is this an Index?
+        {
+			sscanf( str, "%*5s%2u%2u:%2u:%2u", &i_num, &i_min, &i_sec, &i_frame );
+			
+			cd_trackinfo[track_num].track_active = 1;
+			if ( strcmp(type, "AUDIO")==0 ) {
+				cd_trackinfo[track_num].type = 0;
+				bytes_per_sec = 2352;		// Audio tracks assume 2352 bytes per sector, so it's not listed in the CUE file.
+			}
+			else if ( strcmp(type, "MODE1")==0 ) {
+				cd_trackinfo[track_num].type = 4;
+			}
+			cd_trackinfo[track_num].bytes_per_sec = bytes_per_sec;
+			
+			/*
+			if (i_num==0) {	// "Pregap" index, sort of.
+				printf("Track:%02d  Pregap:%d  M:%02d  S:%02d  F:%02d  Type:%s  TOCtype:%d  Bytes_per_sec:%04d\n", track_num, cd_trackinfo[track_num].pregap_present, i_min, i_sec, i_frame, type, cd_trackinfo[track_num].type, bytes_per_sec);
+				cd_trackinfo[track_num].ind0_m = i_min;
+				cd_trackinfo[track_num].ind0_s = i_sec;
+				cd_trackinfo[track_num].ind0_f = i_frame;
+			}
+			*/
+			
+			if (i_num==1) {	// "Track Start" index.
+				printf("Track:%02d  Pregap:%d  M:%02d  S:%02d  F:%02d  Type:%s  TOCtype:%d  Bytes_per_sec:%04d\n", track_num, cd_trackinfo[track_num].pregap_present, i_min, i_sec, i_frame, type, cd_trackinfo[track_num].type, bytes_per_sec);
+				cd_trackinfo[track_num].ind1_m = i_min;
+				cd_trackinfo[track_num].ind1_s = i_sec;
+				cd_trackinfo[track_num].ind1_f = i_frame;
+			}
+        }
+		i_tracks++;
+    }
+	cd_last_track = track_num;
+}
 
 void cd_generate_toc(uint16_t req_type, uint8_t *buffer)
 {
 	switch ( (req_type&0xFF00)>>8 ) {
-		case 0xD0: {
-			buffer[0] = 0x01;	// Rondo - First track (BCD).
-			buffer[1] = 0x22;	// Rondo - Last track (BCD).
-			//buffer[0] = 0x01;	// URC - First track (BCD).
-			//buffer[1] = 0x02;	// URC - Last track (BCD).
+		case 0xD0: {	// Request First Track and Last Track (BCD).
+			//buffer[0] = 0x01;	// Rondo - First track (BCD).
+			//buffer[1] = 0x22;	// Rondo - Last track (BCD).
+			buffer[0] = dec_2_bcd( cd_first_track );
+			buffer[1] = dec_2_bcd( cd_last_track );
 			buffer[2] = 0x00;	// Padding.
 			buffer[3] = 0x00;	// Padding.
 			printf("Core requesting CD TOC0. First Track:%02X. Last Track:%02X (BCD)\n", buffer[0], buffer[1]);
 		}; break;
 
-		case 0xD1: {
-			buffer[0] = 0x49;	// Rondo - Minutes = 0x49 (73).
-			buffer[1] = 0x09;	// Rondo - Seconds = 0x09 (9).
-			buffer[2] = 0x12;	// Rondo - Frames = 0x12 (18).
-			//buffer[0] = 0x30;	// URC - Minutes = 0x49 (73).
-			//buffer[1] = 0x00;	// URC - Seconds = 0x09 (9).
-			//buffer[2] = 0x00;	// URC - Frames = 0x12 (18).
+		case 0xD1: {	// Request Total Disk Size (MSF, in BCD).
+			//buffer[0] = 0x49;	// Rondo - Minutes = 0x49 (73).
+			//buffer[1] = 0x09;	// Rondo - Seconds = 0x09 (9).
+			//buffer[2] = 0x12;	// Rondo - Frames = 0x12 (18).
+			if (cd_trackinfo[cd_last_track].pregap_present)
+			{
+				uint8_t m,s,f;
+				
+				// ADD the pregap.
+				m = cd_trackinfo[cd_last_track].ind1_m + cd_trackinfo[cd_last_track].pre_m;
+				s = cd_trackinfo[cd_last_track].ind1_s + cd_trackinfo[cd_last_track].pre_s;
+				f = cd_trackinfo[cd_last_track].ind1_f + cd_trackinfo[cd_last_track].pre_f;
+				
+				// Not sure if audio tracks need the 2-second lead-in offset added? ElectronAsh.
+				uint32_t lba = msf_to_lba(m, s, f);	// Convert to LBA, so we can add the 2-second lead-in.
+				lba += 2*75;						// Standard lead-in is 2 seconds (75 sectors per second, so 150).
+				//lba_to_msf(lba, m, s, f);
+
+				// Convert back from LBA to MSF...
+				m = lba / (60 * 75);
+				lba -= m * (60 * 75);
+				s = lba / 75;
+				f = lba % 75;
+				
+				buffer[0] = dec_2_bcd( m );
+				buffer[1] = dec_2_bcd( s );
+				buffer[2] = dec_2_bcd( f );
+			}
+			else {
+				buffer[0] = dec_2_bcd( cd_trackinfo[cd_last_track].ind1_m );
+				buffer[1] = dec_2_bcd( cd_trackinfo[cd_last_track].ind1_s );
+				buffer[2] = dec_2_bcd( cd_trackinfo[cd_last_track].ind1_f );
+			}
 			buffer[3] = 0x00;	// Padding.
+			
 			printf("Core requesting CD TOC1. Total Disk Size:M:%02X S:%02X F:%02X (BCD)\n", buffer[0], buffer[1], buffer[2]);
 		}; break;
 
-		case 0xD2: {
-			uint8_t track = req_type&0xFF;	// BCD!
-			switch ( track ) {
-				case 0x01: {	// BCD!
-					buffer[0] = 0x00;	// M
-					buffer[1] = 0x02;	// S
-					buffer[2] = 0x00;	// F
-					buffer[3] = 0x00;	// Track type. (Rondo, track 1, Audio)
-					//buffer[0] = 0x00;	// M
-					//buffer[1] = 0x00;	// S
-					//buffer[2] = 0x00;	// F
-					//buffer[3] = 0x00;	// Track type. (Rondo, track 1, Audio)
-				}; break;
-				case 0x02: {	// BCD!
-					buffer[0] = 0x00;	// M
-					buffer[1] = 0x53;	// S
-					buffer[2] = 0x65;	// F
-					buffer[3] = 0x04;	// Track type. (Rondo, track 2, DATA)
-					//buffer[0] = 0x00;	// M
-					//buffer[1] = 0x02;	// S
-					//buffer[2] = 0x00;	// F
-					//buffer[3] = 0x04;	// Track type. (Rondo, track 2, DATA)
-				}; break;
-				case 0x22: {	// BCD!
-					buffer[0] = 0x46;	// M
-					buffer[1] = 0x58;	// S
-					buffer[2] = 0x62;	// F
-					buffer[3] = 0x04;	// Track type. (Rondo, track 22, DATA)
-				}; break;
+		case 0xD2: {	// Request Track Info (Start MSF in BCD, and track type).
+			uint8_t track = bcd_2_dec(req_type&0xFF);	// Track number from req_type upper byte is in BCD!
+			
+			buffer[0] = dec_2_bcd( cd_trackinfo[track].ind1_m );
+			buffer[1] = dec_2_bcd( cd_trackinfo[track].ind1_s );
+			buffer[2] = dec_2_bcd( cd_trackinfo[track].ind1_f );
+			buffer[3] = cd_trackinfo[track].type;
+
+			if (buffer[3]==4 && cd_trackinfo[track].pregap_present)	// If a DATA track, check for a pregap, and add it!
+			{
+				uint8_t m,s,f;
+				uint32_t lba;
+	
+				// ADD the pregap.
+				m = cd_trackinfo[track].ind1_m + cd_trackinfo[track].pre_m;
+				s = cd_trackinfo[track].ind1_s + cd_trackinfo[track].pre_s;
+				f = cd_trackinfo[track].ind1_f + cd_trackinfo[track].pre_f;
+				
+				lba = msf_to_lba(m, s, f);	// Convert to LBA, so we can add the 2-second lead-in.
+				lba += 2*75;				// Standard lead-in is 2 seconds (75 sectors per second, so 150).
+				//lba_to_msf(lba, m, s, f);
+
+				// Convert back from LBA to MSF...
+				m = lba / (60 * 75);
+				lba -= m * (60 * 75);
+				s = lba / 75;
+				f = lba % 75;
+				
+				buffer[0] = dec_2_bcd( m );
+				buffer[1] = dec_2_bcd( s );
+				buffer[2] = dec_2_bcd( f );
 			}
-			printf("Core requesting CD TOC2. Track:%02X. M:%02X S:%02X F:%02X (BCD). Type:", track, buffer[0], buffer[1], buffer[2]);
-			if (buffer[3]==0x00) printf("Audio\n");
-			else printf("Data\n");
+			
+			printf("Core requesting CD TOC2. Track:%02d. M:%02X S:%02X F:%02X (BCD). Type:", track, buffer[0], buffer[1], buffer[2]);
+			if (buffer[3]==0x00) printf("AUDIO\n");
+			else if (buffer[3]==0x04) printf("DATA\n");
+			else printf("UNKNOWN!\n");
 		}; break;
 	}
 }
+
+/*
+uint32_t cd_calc_lba(uint32_t lba)
+{
+	
+
+
+	return lba;
+}
+*/
+
 
 void user_io_poll()
 {
@@ -1871,14 +2104,15 @@ void user_io_poll()
 						switch ( (req_type&0xFF00)>>8 )
 						{
 							case 0xD0:case 0xD1:case 0xD2: {
-								//printf("Generating TOC: 0x%02X\n", (req_type&0xFF00)>>8);
 								cd_generate_toc(req_type, buffer[disk]);
 								done = 1;
 							}; break;
 
 							case 0x48: {
-								offset = ((lba-225)*2352)+16;	// Rondo etc.
-								//offset = (lba*2048);			// Homebrew, where the ISO has 2048-byte sectors already.
+								if (cd_trackinfo[2].bytes_per_sec==2352) offset = ((lba-225)*2352)+16;		// Rondo etc.
+								else if (cd_trackinfo[2].bytes_per_sec==2048) offset = ((lba-225)*2048);	// Homebrew, etc.
+								else printf("Data track 2 has unhandled bytes-per-sec of %d !\n", cd_trackinfo[2].bytes_per_sec);
+								
 								if ( FileSeek(&sd_image[disk], offset, SEEK_SET) )
 								{
 									if ( FileReadAdv(&sd_image[disk], buffer[disk], 2048) ) done = 1;

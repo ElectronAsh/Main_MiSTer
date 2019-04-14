@@ -196,6 +196,9 @@ char is_menu_core();
 char is_x86_core();
 char is_snes_core();
 char has_menu();
+char cue_getch();
+void parse_cue_file(void);
+
 
 const char *get_image_name(int i);
 
