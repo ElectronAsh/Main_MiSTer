@@ -2160,11 +2160,20 @@ void user_io_poll()
 									}; break;
 								}								
 
-								if ( FileSeek(&sd_image[disk], lba*2352, SEEK_SET) )
-								{
-									if ( FileReadAdv(&sd_image[disk], buffer[disk], 2352) ) done = 1;
+								uint8_t track = cd_lba_to_track(lba);
+								
+								if (cd_trackinfo[track].type!=0x00) {
+									printf("Error: Core is trying to play back non-audio track as CDDA!\n");
+									memset(buffer[disk], 0, sizeof(buffer[disk]));
 								}
-								printf("Core requesting a raw 2352-byte CD sector, from LBA: 0x%08X\n", lba);
+								else
+								{
+									if ( FileSeek(&sd_image[disk], (lba-525)*2352, SEEK_SET) )
+									{
+										if ( FileReadAdv(&sd_image[disk], buffer[disk], 2352) ) done = 1;
+									}
+								}
+								printf("Core requesting a raw 2352-byte CD sector, from LBA: 0x%08X  TRACK: %02d\n", lba, track);
 							}; break;
 							
 							default: {
