@@ -1341,6 +1341,11 @@ void HandleUI(void)
 			iso_mode = 1;
 			printf("CUE file found and mounted.\n");
 			parse_cue_file();
+			
+			// TESTING !!
+			//user_io_file_mount("/dev/cdrom", 2);
+			//open("/dev/cdrom", O_RDONLY, 0777);
+			user_io_cd_drive_mount();
 		}
 		else iso_mode = 0;
 

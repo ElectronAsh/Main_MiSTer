@@ -189,6 +189,7 @@ char *user_io_8bit_get_string(char);
 uint32_t user_io_8bit_set_status(uint32_t, uint32_t);
 int user_io_file_tx(const char* name, unsigned char index = 0, char opensave = 0, char mute = 0, char composite = 0);
 int  user_io_file_mount(char *name, unsigned char index = 0, char pre = 0);
+int user_io_cd_drive_mount();
 char user_io_serial_status(serial_status_t *, uint8_t);
 char *user_io_get_core_name();
 const char *user_io_get_core_name_ex();
@@ -197,6 +198,7 @@ char is_x86_core();
 char is_snes_core();
 char has_menu();
 char cue_getch();
+char cdd_getch();
 void parse_cue_file(void);
 
 

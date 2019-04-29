@@ -48,7 +48,9 @@ void setStorage(int dev);
 int  isUSBMounted();
 
 int  FileOpenEx(fileTYPE *file, const char *name, int mode, char mute = 0);
+int  FileOpenCDdrive(fileTYPE *file);
 int  FileOpen(fileTYPE *file, const char *name, char mute = 0);
+
 void FileClose(fileTYPE *file);
 
 __off64_t FileGetSize(fileTYPE *file);

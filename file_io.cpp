@@ -259,6 +259,46 @@ void FileClose(fileTYPE *file)
 	file->filp = nullptr;
 }
 
+int FileOpenCDdrive(fileTYPE *file)
+{
+	FileClose(file);
+	file->mode = 0;
+	file->type = 0;
+	
+	strcpy(file->name, "/dev/sr0");
+	
+	int fd = open("/dev/sr0", O_RDONLY | O_NONBLOCK);
+	if (fd <= 0)
+	{
+		printf("FileOpenCDdrive(open) File:%s, error: %s.\n", "/dev/sr0", strerror(errno));
+		return 0;
+	}
+	else printf("FileOpenCDdrive(open) /dev/sr0\n");
+
+	file->filp = fdopen(fd, "r");
+	if (!file->filp)
+	{
+		printf("FileOpenCDdrive(fdopen) File:%s, error: %s.\n", "/dev/sr0", strerror(errno));
+		close(fd);
+		return 0;
+	}
+	else printf("FileOpenCDdrive(fdopen) /dev/sr0\n");
+	
+	struct stat64 st;
+	int ret = fstat64(fileno(file->filp), &st);
+	if (ret < 0)
+	{
+		printf("FileOpenCDdrive(fstat) File:%s, error: %d.\n", "/dev/sr0", ret);
+		FileClose(file);
+		return 0;
+	}
+	printf("FileOpenCDdrive(fstat) /dev/sr0", ret);
+
+	file->size = st.st_size;
+	file->offset = 0;
+	file->mode = O_RDONLY;
+}
+
 int FileOpenEx(fileTYPE *file, const char *name, int mode, char mute)
 {
 	make_fullpath((char*)name, mode);

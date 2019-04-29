@@ -1003,6 +1003,30 @@ void user_io_set_index(unsigned char index)
 	DisableFpga();
 }
 
+int cdd_pt = 0;
+char cdd_getch()
+{
+	static uint8_t buf[512];
+	if (!(cdd_pt & 0x1ff)) FileReadAdv(&sd_image[2], buf, 512);
+	if (cdd_pt >= sd_image[2].size) return 0;
+	return buf[(cdd_pt++) & 0x1ff];
+}
+
+int user_io_cd_drive_mount()
+{
+	FileOpenCDdrive(&sd_image[2]);
+	
+	cdd_pt = 0;
+	
+	for (int i=0;i<200;i++) {
+		char my_char = cdd_getch();
+		printf("%02X", my_char);
+	}
+	printf("\n");
+
+	return 0;
+}
+
 int user_io_file_mount(char *name, unsigned char index, char pre)
 {
 	int writable = 0;
@@ -1626,6 +1650,8 @@ char cue_getch()
 	return buf[(cue_pt++) & 0x1ff];
 }
 
+
+
 char cue_readline(char *buffer)
 {
 	char my_char = 0;
@@ -1717,7 +1743,7 @@ void parse_cue_file(void)
 			
 			/*
 			if (i_num==0) {	// "Pregap" index, sort of.
-				printf("Track:%02d  Pregap:%d  M:%02d  S:%02d  F:%02d  Type:%s  TOCtype:%d  BPS:%04d\n", track_num, cd_trackinfo[track_num].pregap_present, i_min, i_sec, i_frame, type, cd_trackinfo[track_num].type, bytes_per_sec);
+				printf("Track:%02d  Pregap:%d  MSF(DEC)=%02d:%02d:%02d  Type:%s  TOCtype:%d  BPS:%04d\n", track_num, cd_trackinfo[track_num].pregap_present, i_min, i_sec, i_frame, type, cd_trackinfo[track_num].type, bytes_per_sec);
 				cd_trackinfo[track_num].ind0_m = i_min;
 				cd_trackinfo[track_num].ind0_s = i_sec;
 				cd_trackinfo[track_num].ind0_f = i_frame;
@@ -1725,7 +1751,7 @@ void parse_cue_file(void)
 			*/
 			
 			if (i_num==1) {	// "Track Start" index.
-				printf("Track:%02d  Pregap:%d  M:%02d  S:%02d  F:%02d  Type:%s  TOCtype:%d  BPS:%04d\n", track_num, cd_trackinfo[track_num].pregap_present, i_min, i_sec, i_frame, type, cd_trackinfo[track_num].type, bytes_per_sec);
+				printf("Track:%02d  Pregap:%d  MSF(DEC)=%02d:%02d:%02d  Type:%s  TOCtype:%d  BPS:%04d\n", track_num, cd_trackinfo[track_num].pregap_present, i_min, i_sec, i_frame, type, cd_trackinfo[track_num].type, bytes_per_sec);
 				cd_trackinfo[track_num].ind1_m = i_min;
 				cd_trackinfo[track_num].ind1_s = i_sec;
 				cd_trackinfo[track_num].ind1_f = i_frame;
@@ -1786,7 +1812,7 @@ void cd_generate_toc(uint16_t req_type, uint8_t *buffer)
 			//}
 			buffer[3] = 0x00;	// Padding.
 			
-			printf("Core requesting CD TOC1. Total Disk Size:M:%02X S:%02X F:%02X (BCD)\n", buffer[0], buffer[1], buffer[2]);
+			printf("Core requesting CD TOC1. Total Disk Size MSF(BCD)=%02X:%02X:%02X (BCD)\n", buffer[0], buffer[1], buffer[2]);
 		}; break;
 
 		case 0xD2: {	// Request Track Info (Start MSF in BCD, and track type).
@@ -1819,7 +1845,7 @@ void cd_generate_toc(uint16_t req_type, uint8_t *buffer)
 			}
 			buffer[3] = cd_trackinfo[track].type;
 			
-			printf("Core requesting CD TOC2. Track:%02d. M:%02X S:%02X F:%02X (BCD). Type:", track, buffer[0], buffer[1], buffer[2]);
+			printf("Core requesting CD TOC2. Track:%02d. MSF(BCD)=%02X:%02X:%02X (BCD). Type:", track, buffer[0], buffer[1], buffer[2]);
 			if (buffer[3]==0x00) printf("AUDIO\n");
 			else if (buffer[3]==0x04) printf("DATA\n");
 			else printf("UNKNOWN!\n");
@@ -2121,16 +2147,26 @@ void user_io_poll()
 							}; break;
 
 							case 0x48: {
-								uint8_t track = cd_lba_to_track(lba);
-								uint16_t bps = cd_trackinfo[track].bytes_per_sec;
+								uint8_t track = 0;
+								uint16_t bps = 2352;
 								uint32_t pregap = 0;
+								
+								if (lba < 500) 
+								{
+									track = 0; bps = 2048; pregap = 0;
+								}
+								else
+								{
+									track = cd_lba_to_track(lba);
+									bps = cd_trackinfo[track].bytes_per_sec;
+								}
 								
 								if (cd_trackinfo[track].pregap_present) {
 									pregap = msf_to_lba(cd_trackinfo[track].pre_m, cd_trackinfo[track].pre_s, cd_trackinfo[track].pre_f);
 								}
 								
 								if (bps==2352) offset = 16+((lba-pregap)*2352);		// Rondo etc.
-								else if (bps==2048) offset = ((lba-pregap)*2048);	// Homebrew, etc.
+								else if (bps==2048) offset = (lba-pregap-225)*2048;	// Homebrew, etc.
 								else printf("Data track %02d has unhandled bytes-per-sec of %d !\n", track, bps);
 								
 								if ( FileSeek(&sd_image[disk], offset, SEEK_SET) )
