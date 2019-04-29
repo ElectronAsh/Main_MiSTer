@@ -26,6 +26,14 @@
 #include "miniz_zip.h"
 #include "scheduler.h"
 
+#include <errno.h>
+#include <sys/ioctl.h>
+#include <fcntl.h>
+#include <linux/cdrom.h>
+
+#define CDDEVICE "/dev/cdrom"           /* CDROM device */
+
+
 #define MIN(a,b) (((a)<(b)) ? (a) : (b))
 
 typedef std::vector<dirent> DirentVector;
@@ -259,44 +267,78 @@ void FileClose(fileTYPE *file)
 	file->filp = nullptr;
 }
 
+
+
+   union {
+        struct cdrom_msf* msf;
+        char buffer[CD_FRAMESIZE_RAW];
+   }arg;
+
+ 
 int FileOpenCDdrive(fileTYPE *file)
 {
+	/*
 	FileClose(file);
 	file->mode = 0;
 	file->type = 0;
 	
-	strcpy(file->name, "/dev/sr0");
+	strcpy(file->name, "/dev/cdrom");
+	*/
 	
-	int fd = open("/dev/sr0", O_RDONLY | O_NONBLOCK);
+	int fd = open(CDDEVICE, O_RDONLY | O_NONBLOCK);
 	if (fd <= 0)
 	{
-		printf("FileOpenCDdrive(open) File:%s, error: %s.\n", "/dev/sr0", strerror(errno));
+		printf("FileOpenCDdrive(open) File:%s, error: %s.\n", CDDEVICE, strerror(errno));
 		return 0;
 	}
-	else printf("FileOpenCDdrive(open) /dev/sr0\n");
+	else printf("FileOpenCDdrive(open) /dev/cdrom\n");
 
+	/*
 	file->filp = fdopen(fd, "r");
 	if (!file->filp)
 	{
-		printf("FileOpenCDdrive(fdopen) File:%s, error: %s.\n", "/dev/sr0", strerror(errno));
+		printf("FileOpenCDdrive(fdopen) File:%s, error: %s.\n", CDDEVICE, strerror(errno));
 		close(fd);
 		return 0;
 	}
-	else printf("FileOpenCDdrive(fdopen) /dev/sr0\n");
+	else printf("FileOpenCDdrive(fdopen) /dev/cdrom\n");
 	
 	struct stat64 st;
 	int ret = fstat64(fileno(file->filp), &st);
 	if (ret < 0)
 	{
-		printf("FileOpenCDdrive(fstat) File:%s, error: %d.\n", "/dev/sr0", ret);
+		printf("FileOpenCDdrive(fstat) File:%s, error: %d.\n", CDDEVICE, ret);
 		FileClose(file);
 		return 0;
 	}
-	printf("FileOpenCDdrive(fstat) /dev/sr0", ret);
+	printf("FileOpenCDdrive(fstat) /dev/cdrom", ret);
 
 	file->size = st.st_size;
 	file->offset = 0;
 	file->mode = O_RDONLY;
+	*/
+	
+	arg.msf = (cdrom_msf*)malloc(sizeof(struct cdrom_msf));
+	arg.msf->cdmsf_min0 = 10;
+	arg.msf->cdmsf_sec0 = 10;
+	arg.msf->cdmsf_frame0 = 0;
+	
+	arg.msf->cdmsf_min1 = 10;
+	arg.msf->cdmsf_sec1 = 10;
+	arg.msf->cdmsf_frame1 = 0;
+
+	if (ioctl(fd,CDROMREADMODE1,(void*)&arg)<0)
+	{
+		printf("ioctl cdrom error. errno:%i  EINVAL:%i\n", errno, EINVAL);
+		//exit(1);
+	}
+	
+	int i;
+	for (i=0;i<CD_FRAMESIZE;i++)
+	{
+		printf("%02X", arg.buffer[i]);
+	}
+	printf("\n");
 }
 
 int FileOpenEx(fileTYPE *file, const char *name, int mode, char mute)

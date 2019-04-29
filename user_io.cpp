@@ -1016,14 +1016,14 @@ int user_io_cd_drive_mount()
 {
 	FileOpenCDdrive(&sd_image[2]);
 	
+	/*
 	cdd_pt = 0;
-	
 	for (int i=0;i<200;i++) {
 		char my_char = cdd_getch();
 		printf("%02X", my_char);
 	}
 	printf("\n");
-
+	*/
 	return 0;
 }
 
