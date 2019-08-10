@@ -952,6 +952,9 @@ void HandleUI(void)
 		OsdWrite(4, s, menusub == 2, 0);
 
 		OsdWrite(5, "", 0, 0);
+		//unsigned long status = user_io_8bit_set_status(0, 0);
+		//user_io_8bit_set_status(status ^ 1, 1);
+		//user_io_8bit_set_status(status, 1);
 
 		strcpy(s, " Aspect ratio:       ");
 		strcat(s, archie_get_ar() ? "16:9" : "4:3");
@@ -1345,7 +1348,7 @@ void HandleUI(void)
 			// TESTING !!
 			//user_io_file_mount("/dev/cdrom", 2);
 			//open("/dev/cdrom", O_RDONLY, 0777);
-			user_io_cd_drive_mount();
+			//user_io_cd_drive_mount();
 		}
 		else iso_mode = 0;
 
